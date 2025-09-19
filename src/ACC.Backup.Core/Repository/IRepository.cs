@@ -21,4 +21,12 @@ public interface IRepository
 	/// <param name="cancellationToken"></param>
 	/// <returns>True if the backup was succesful, false if it failed.</returns>
 	Task<bool> BackupItemToRepositoryAsync(IProgress<double> progress, Item item, Uri signedUri, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Saves the provided HTML report to the repository.
+	/// </summary>
+	/// <param name="reportHtml"></param>
+	/// <param name="cancellationToken"></param>
+	/// <returns></returns>
+	Task SaveReportToRepositoryAsync(string reportHtml, CancellationToken cancellationToken = default);
 }

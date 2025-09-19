@@ -1,24 +1,189 @@
-﻿namespace ACC.Backup.Core.Reporting;
+﻿using ACC.Backup.Core.Logging;
+using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using table.lib;
 
-public sealed class BasicReportingService : IReportingService
+namespace ACC.Backup.Core.Reporting;
+
+/// <summary>
+/// A basic implementation of IReportingService that generates HTML tables.
+/// </summary>
+/// <param name="logger"></param>
+public sealed class BasicReportingService(ILogger<BasicReportingService> logger) : IReportingService
 {
+	// Store incoming data in thread-safe collections
+	private readonly ConcurrentDictionary<string, HubRecord> _hubs = new();
+	private readonly ConcurrentDictionary<string, ProjectRecord> _projects = new();
+	private readonly ConcurrentBag<FileRecord> _files = [];
+	private readonly ConcurrentBag<string> _errors = [];
+
+	// HTML formatting
+	private readonly static string DivStart = @"<div style=""margin-top: 1em; margin-bottom: 1em; margin-left: auto; margin-right: auto; width: 80%;"">";
+	private readonly static string DivEnd = "</div>";
+
+	/// <summary>
+	/// Add a hub to the report.
+	/// </summary>
+	/// <param name="id">The ID of the hub.<param>
+	/// <param name="name">The name of the hub.</param>
+	/// <param name="isExcluded">If this hub is excluded by the backup job settings.</param>
 	public void AddHub(string id, string name, bool isExcluded = false)
 	{
-		//throw new NotImplementedException();
+		_hubs[id] = new HubRecord(id, name, isExcluded);
 	}
 
-	public void AddProject(string id, string hubId, string name, bool isExcluded = false)
+	/// <summary>
+	/// Add a project to the report.
+	/// </summary>
+	/// <param name="id">The ID of the project.<param>
+	/// <param name="name">The name of the project.</param>
+	/// <param name="hubId">The ID of the hub that contains this project.</param>
+	/// <param name="isExcluded">If this project is excluded by the backup job settings.</param>
+	public void AddProject(string id, string name, string hubId, bool isExcluded = false)
 	{
-		//throw new NotImplementedException();
+		_projects[id] = new ProjectRecord(id, hubId, name, isExcluded);
 	}
 
-	public void AddFile(string id, string projectId, string name)
+	/// <summary>
+	/// Add a file to the report.
+	/// </summary>
+	/// <param name="id">The ID of the file.<param>
+	/// <param name="name">The name of the file.</param>
+	/// <param name="projectId">The ID of the project that contains this file.</param>
+	/// <param name="state">The state of the file download.</param>
+	public void AddFile(string id, string name, string projectId, ReportingState state)
 	{
-		//throw new NotImplementedException();
+		_files.Add(new FileRecord(id, projectId, name, state));
 	}
 
+	/// <summary>
+	/// Add a message to the report.
+	/// </summary>
+	/// <param name="message">The message that will be added to the report.</param>
+	public void AddMessage(string message)
+	{
+		_errors.Add(message);
+	}
+
+	/// <summary>
+	/// Generate the HTML report.
+	/// </summary>
+	/// <returns>The HTML tables that represent the backup state.</returns>
 	public string GenerateReport()
 	{
-		throw new NotImplementedException();
+		var projects = _files
+			.GroupBy(x => x.ProjectId)
+			.Select(x =>
+			{
+				_projects.TryGetValue(x.Key, out var project);
+				if (project is null)
+				{
+					logger.LogErrorReportKeyNotFound("Project", x.Key);
+				}
+
+				_hubs.TryGetValue(project?.HubId ?? string.Empty, out var hub);
+				if (hub is null)
+				{
+					logger.LogErrorReportKeyNotFound("Hub", x.Key);
+				}
+
+				return new ReportProject(
+					HubName: hub?.Name ?? "(Unknown Hub)",
+					ProjectName: project?.Name ?? "(Unknown Project)",
+					TotalFiles: x.Count(),
+					UpToDateFiles: x.Count(x => x.State == ReportingState.UpToDate),
+					SuccessfulFiles: x.Count(x => x.State == ReportingState.Successful),
+					FailedFiles: x.Count(x => x.State == ReportingState.Failed)
+				);
+			})
+			.ToList();
+
+		var summaryReport = new ReportSummary(
+			TotalFiles: _files.Count,
+			UpToDateFiles: _files.Count(x => x.State == ReportingState.UpToDate),
+			SuccessfulFiles: _files.Count(x => x.State == ReportingState.Successful),
+			FailedFiles: _files.Count(x => x.State == ReportingState.Failed)
+		);
+
+		var errorReports = _errors
+			.Select(x => new ReportMessage(x))
+			.ToList();
+
+		// Generate and combine the HTML tables
+		var summaryReportHtml = new Table<ReportSummary>([summaryReport])
+			.ToHtml();
+		var projectsReportHtml = new Table<ReportProject>(projects)
+			.ToHtml();
+		var errorsReportHtml = new Table<ReportMessage>(errorReports)
+			.ToHtml();
+
+		return string.Join(null, 
+			$"{DivStart}{summaryReportHtml}{DivEnd}", 
+			$"{DivStart}{projectsReportHtml}{DivEnd}",
+			$"{DivStart}{errorsReportHtml}{DivEnd}");
 	}
 }
+
+/// <summary>
+/// A summary of the backup operation.
+/// </summary>
+/// <param name="TotalFiles"></param>
+/// <param name="UpToDateFiles"></param>
+/// <param name="SuccessfulFiles"></param>
+/// <param name="FailedFiles"></param>
+internal sealed record ReportSummary(
+	int TotalFiles,
+	int UpToDateFiles,
+	int SuccessfulFiles,
+	int FailedFiles
+);
+
+/// <summary>
+/// A report for a specific project.
+/// </summary>
+/// <param name="ProjectName"></param>
+/// <param name="HubName"></param>
+/// <param name="TotalFiles"></param>
+/// <param name="UpToDateFiles"></param>
+/// <param name="SuccessfulFiles"></param>
+/// <param name="FailedFiles"></param>
+internal sealed record ReportProject(
+	string ProjectName,
+	string HubName,
+	int TotalFiles,
+	int UpToDateFiles,
+	int SuccessfulFiles,
+	int FailedFiles
+);
+
+/// <summary>
+/// An message to be included in the report.
+/// </summary>
+/// <param name="Message"></param>
+internal sealed record ReportMessage(string Message);
+
+/// <summary>
+/// A record representing a file and its state.
+/// </summary>
+/// <param name="Id"></param>
+/// <param name="ProjectId"></param>
+/// <param name="Name"></param>
+/// <param name="State"></param>
+internal record FileRecord(string Id, string ProjectId, string Name, ReportingState State);
+
+/// <summary>
+/// A record representing a hub.
+/// </summary>
+/// <param name="Id"></param>
+/// <param name="Name"></param>
+/// <param name="IsExcluded"></param>
+internal record HubRecord(string Id, string Name, bool IsExcluded);
+
+/// <summary>
+///	A record representing a project.
+/// </summary>
+/// <param name="Id"></param>
+/// <param name="HubId"></param>
+/// <param name="Name"></param>
+/// <param name="IsExcluded"></param>
+internal record ProjectRecord(string Id, string HubId, string Name, bool IsExcluded);

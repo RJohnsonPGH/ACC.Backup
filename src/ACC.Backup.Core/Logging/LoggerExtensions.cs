@@ -65,4 +65,8 @@ internal static partial class LoggerExtensions
 
 	[LoggerMessage(Level = LogLevel.Trace, Message = "Item file size: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}, Size = {Size}")]
 	internal static partial void LogTraceBackupFileSize(this ILogger logger, string ProjectId, string itemId, int version, long size);
+
+	// Report
+	[LoggerMessage(Level = LogLevel.Error, Message = "Report key not found: Type = {Type}, ID = {Id}")]
+	internal static partial void LogErrorReportKeyNotFound(this ILogger logger, string type, string id);
 }

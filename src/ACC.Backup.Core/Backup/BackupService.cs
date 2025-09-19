@@ -85,13 +85,13 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 						// Check if the project should be excluded
 						if (exclusionService.ShouldExcludeItem(project.Id))
 						{
-							reportService.AddProject(hub.Id, project.Id, project.Name, true);
+							reportService.AddProject(project.Id, project.Name, hub.Id, true);
 							logger.LogInformationItemExcluded(project.Id, project.Name);
 							continue;
 						}
 
 						// The project is not excluded
-						reportService.AddProject(hub.Id, project.Id, project.Name);
+						reportService.AddProject(project.Id, project.Name, hub.Id);
 						await _projects.Writer.WriteAsync(project, cancellationToken);
 						progress.Report(DiscoveryProgress.ProjectDiscovered);
 						logger.LogTraceItemEnumerated(nameof(Project), project.Id, project.Name);
@@ -125,31 +125,30 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 	{
 		try
 		{
-		// Retrieve all files in all projects in all hubs in the tenant in parallel, based on the specified degree of parallelism
-		await Parallel.ForEachAsync(
-			_projects.Reader.ReadAllAsync(cancellationToken),
-			new ParallelOptions()
-			{
-				MaxDegreeOfParallelism = degreeOfParalellism,
-				CancellationToken = cancellationToken
-			},
-			async (project, token) =>
-			{
-				// Retrieve all files in the project
-				logger.LogInformationChildEnumerationStart("Project", project.Name, project.Id);
-				await foreach (var currentItem in client.GetProjectContentsAsync(project, token))
+			// Retrieve all files in all projects in all hubs in the tenant in parallel, based on the specified degree of parallelism
+			await Parallel.ForEachAsync(
+				_projects.Reader.ReadAllAsync(cancellationToken),
+				new ParallelOptions()
 				{
-					reportService.AddFile(currentItem.Id, project.Id, currentItem.Name);
-					await _projectFiles.Writer.WriteAsync(currentItem, token);
-					progress.Report(DiscoveryProgress.FileDiscovered);
-					logger.LogTraceItemEnumerated(nameof(Item), project.Id, project.Name);
-				}
+					MaxDegreeOfParallelism = degreeOfParalellism,
+					CancellationToken = cancellationToken
+				},
+				async (project, token) =>
+				{
+					// Retrieve all files in the project
+					logger.LogInformationChildEnumerationStart("Project", project.Name, project.Id);
+					await foreach (var currentItem in client.GetProjectContentsAsync(project, token))
+					{
+						await _projectFiles.Writer.WriteAsync(currentItem, token);
+						progress.Report(DiscoveryProgress.FileDiscovered);
+						logger.LogTraceItemEnumerated(nameof(Item), project.Id, project.Name);
+					}
 
-				// The current project has been fully enumerated
-				progress.Report(DiscoveryProgress.ProjectEnumerated);
-				logger.LogInformationChildEnumerationComplete("Project", project.Name, project.Id);
-			}
-		);
+					// The current project has been fully enumerated
+					progress.Report(DiscoveryProgress.ProjectEnumerated);
+					logger.LogInformationChildEnumerationComplete("Project", project.Name, project.Id);
+				}
+			);
 		}
 		finally
 		{
@@ -193,6 +192,8 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 				if (item.DownloadUrl is null)
 				{
 					itemProgress.Status = DownloadProgress.DownloadStatus.Failed;
+					reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.Failed);
+					reportService.AddMessage($"No download URI for item: {item.ProjectName} - {item.Name}");
 					progress.Report(itemProgress);
 					logger.LogErrorNoDownloadUri(item.Id, item.Name);
 					return;
@@ -202,6 +203,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 				var latestVersionInRepository = await repositoryService.GetItemVersionFromRepositoryAsync(item, token);
 				if (item.Version <= latestVersionInRepository)
 				{
+					reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.UpToDate);
 					progress.Report(new()
 					{
 						Id = item.Id,
@@ -209,7 +211,6 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 						PercentComplete = 100,
 						Status = DownloadProgress.DownloadStatus.Completed
 					});
-
 					logger.LogTraceDownloadSkipped(item.Id, item.Name, item.Version);
 					return;
 				}
@@ -230,6 +231,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 				if (!backupResult)
 				{
 					itemProgress.Status = DownloadProgress.DownloadStatus.Failed;
+					reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.Failed);
 					progress.Report(itemProgress);
 					logger.LogErrorFileDownloadFailed(item.Id, item.Name, item.Version);
 					return;
@@ -237,6 +239,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 
 				// The backup was succesful, report it and log it
 				itemProgress.Status = DownloadProgress.DownloadStatus.Completed;
+				reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.Successful);
 				progress.Report(itemProgress);
 				logger.LogDebugFileDownloadComplete(item.Id, item.Name, item.Version);
 			}
@@ -244,6 +247,12 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 
 		// All files have been backed up
 		logger.LogInformationDownloadComplete();
+	}
+
+	public Task SaveReportAsync(CancellationToken cancellationToken = default)
+	{
+		var reportHtml = reportService.GenerateReport();
+		return repositoryService.SaveReportToRepositoryAsync(reportHtml, cancellationToken);
 	}
 }
 

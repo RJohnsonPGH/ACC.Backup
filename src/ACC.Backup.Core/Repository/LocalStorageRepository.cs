@@ -137,4 +137,20 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 		logger.LogTraceItemRepositoryVersion(item.ProjectId, item.Id, repoItem.LatestVersion);
 		return repoItem.LatestVersion;
 	}
+
+	public async Task SaveReportToRepositoryAsync(string reportHtml, CancellationToken cancellationToken)
+	{
+		try
+		{
+			var reportDirectory = Path.Combine(pathProvider.RepositoryPath, "reports");
+			Directory.CreateDirectory(reportDirectory);
+			var reportPath = Path.Combine(reportDirectory, $"{DateTime.Now:yyyy-MM-dd-HH-mm-ss}.html");
+			await File.WriteAllTextAsync(reportPath, reportHtml, cancellationToken);
+			//logger.LogInformationReportSaved(reportPath);
+		}
+		catch (Exception ex)
+		{
+			//logger.LogErrorReportSaveFailed(ex);
+		}
+	}
 }

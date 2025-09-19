@@ -53,9 +53,10 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
 				    .IsIndeterminate();
                 var downloadDisplayTask = context.AddTask("Downloading files", false, 1)
                     .IsIndeterminate();
+                var generateReportDisplayTask = context.AddTask("Generating report", false, 1);
 
 #warning refactor this out to be a parallalelism provider
-                int degreeOfParalellism;
+				int degreeOfParalellism;
 				try
                 {
 					degreeOfParalellism = Math.Min(await dbContext.Credentials.CountAsync() * 2, 16);
@@ -77,15 +78,12 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                     {
                         // Discovery
                         case DiscoveryProgress.HubDiscovered:
-                            discoverProjectsInHubsDisplayTask.IsIndeterminate(false);
 							discoverProjectsInHubsDisplayTask.MaxValue = Interlocked.Increment(ref hubCount);
                             break;
                         case DiscoveryProgress.ProjectDiscovered:
-                            discoverFilesInProjectsDisplayTask.IsIndeterminate(false);
 							discoverFilesInProjectsDisplayTask.MaxValue = Interlocked.Increment(ref projectCount);
 							break;
                         case DiscoveryProgress.FileDiscovered:
-							downloadDisplayTask.IsIndeterminate(false);
 							downloadDisplayTask.MaxValue = Interlocked.Increment(ref backupFileCount);
 							break;
 						// Enumeration
@@ -103,13 +101,16 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
 							break;
 						// Complete
 						case DiscoveryProgress.HubEnumerationComplete:
-                            discoverHubsInTenantDisplayTask.StopTask();
+							discoverProjectsInHubsDisplayTask.IsIndeterminate(false);
+							discoverHubsInTenantDisplayTask.StopTask();
                             break;
                         case DiscoveryProgress.ProjectEnumerationComplete:
-                            discoverProjectsInHubsDisplayTask.StopTask();
+							discoverFilesInProjectsDisplayTask.IsIndeterminate(false);
+							discoverProjectsInHubsDisplayTask.StopTask();
                             break;
                         case DiscoveryProgress.FileEnumerationComplete:
-                            discoverFilesInProjectsDisplayTask.StopTask();
+							downloadDisplayTask.IsIndeterminate(false);
+							discoverFilesInProjectsDisplayTask.StopTask();
                             break;
 					};
                 });
@@ -117,6 +118,7 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                 discoverHubsInTenantDisplayTask.StartTask();
                 discoverProjectsInHubsDisplayTask.StartTask();
                 discoverFilesInProjectsDisplayTask.StartTask();
+                downloadDisplayTask.StartTask();
 				var retrieveHubsTask = backupService.EnumerateHubsAsync(progress);
                 var retrieveProjectsTask = backupService.EnumerateProjectsAsync(progress, degreeOfParalellism);
                 var retrieveFilesTask = backupService.EnumerateFilesAsync(progress, degreeOfParalellism);
@@ -138,7 +140,13 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                 var downloadFilesTask = backupService.BackupProjectFilesAsync(fileDownloadProgress, degreeOfParalellism);
 
                 await Task.WhenAll(retrieveHubsTask, retrieveProjectsTask, retrieveFilesTask, downloadFilesTask);
-                return 0;
+
+                generateReportDisplayTask.StartTask();
+				await backupService.SaveReportAsync();
+                generateReportDisplayTask.Increment(1);
+				generateReportDisplayTask.StopTask();
+
+				return 0;
 			});
 
 		return returnValue;
