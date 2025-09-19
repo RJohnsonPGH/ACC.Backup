@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ACC.Client.Test", "test\ACC
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ACC.Backup.Core", "src\ACC.Backup.Core\ACC.Backup.Core.csproj", "{EEE16E2F-2063-4790-86AD-EBEAEFB5A29B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ACC.Backup.Core.Test", "test\ACC.Backup.Core.Test\ACC.Backup.Core.Test.csproj", "{D98C123F-206A-4EA3-BEB8-1BEBF9AA7456}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +35,10 @@ Global
 		{EEE16E2F-2063-4790-86AD-EBEAEFB5A29B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EEE16E2F-2063-4790-86AD-EBEAEFB5A29B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EEE16E2F-2063-4790-86AD-EBEAEFB5A29B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D98C123F-206A-4EA3-BEB8-1BEBF9AA7456}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D98C123F-206A-4EA3-BEB8-1BEBF9AA7456}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D98C123F-206A-4EA3-BEB8-1BEBF9AA7456}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D98C123F-206A-4EA3-BEB8-1BEBF9AA7456}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
