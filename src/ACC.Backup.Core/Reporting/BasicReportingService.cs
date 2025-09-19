@@ -169,7 +169,7 @@ internal sealed record ReportMessage(string Message);
 /// <param name="ProjectId"></param>
 /// <param name="Name"></param>
 /// <param name="State"></param>
-internal record FileRecord(string Id, string ProjectId, string Name, ReportingState State);
+internal sealed record FileRecord(string Id, string ProjectId, string Name, ReportingState State);
 
 /// <summary>
 /// A record representing a hub.
@@ -177,7 +177,7 @@ internal record FileRecord(string Id, string ProjectId, string Name, ReportingSt
 /// <param name="Id"></param>
 /// <param name="Name"></param>
 /// <param name="IsExcluded"></param>
-internal record HubRecord(string Id, string Name, bool IsExcluded);
+internal sealed record HubRecord(string Id, string Name, bool IsExcluded);
 
 /// <summary>
 ///	A record representing a project.
@@ -186,4 +186,4 @@ internal record HubRecord(string Id, string Name, bool IsExcluded);
 /// <param name="HubId"></param>
 /// <param name="Name"></param>
 /// <param name="IsExcluded"></param>
-internal record ProjectRecord(string Id, string HubId, string Name, bool IsExcluded);
+internal sealed record ProjectRecord(string Id, string HubId, string Name, bool IsExcluded);
