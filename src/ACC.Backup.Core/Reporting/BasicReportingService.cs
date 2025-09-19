@@ -15,7 +15,7 @@ public sealed class BasicReportingService(ILogger<BasicReportingService> logger)
 	private readonly ConcurrentDictionary<string, HubRecord> _hubs = new();
 	private readonly ConcurrentDictionary<string, ProjectRecord> _projects = new();
 	private readonly ConcurrentBag<FileRecord> _files = [];
-	private readonly ConcurrentBag<string> _errors = [];
+	private readonly ConcurrentBag<string> _messages = [];
 
 	// HTML formatting
 	private readonly static string DivStart = @"<div style=""margin-top: 1em; margin-bottom: 1em; margin-left: auto; margin-right: auto; width: 80%;"">";
@@ -62,7 +62,7 @@ public sealed class BasicReportingService(ILogger<BasicReportingService> logger)
 	/// <param name="message">The message that will be added to the report.</param>
 	public void AddMessage(string message)
 	{
-		_errors.Add(message);
+		_messages.Add(message);
 	}
 
 	/// <summary>
@@ -71,7 +71,7 @@ public sealed class BasicReportingService(ILogger<BasicReportingService> logger)
 	/// <returns>The HTML tables that represent the backup state.</returns>
 	public string GenerateReport()
 	{
-		var projects = _files
+		var reportProjects = _files
 			.GroupBy(x => x.ProjectId)
 			.Select(x =>
 			{
@@ -98,29 +98,29 @@ public sealed class BasicReportingService(ILogger<BasicReportingService> logger)
 			})
 			.ToList();
 
-		var summaryReport = new ReportSummary(
+		var reportSummary = new ReportSummary(
 			TotalFiles: _files.Count,
 			UpToDateFiles: _files.Count(x => x.State == ReportingState.UpToDate),
 			SuccessfulFiles: _files.Count(x => x.State == ReportingState.Successful),
 			FailedFiles: _files.Count(x => x.State == ReportingState.Failed)
 		);
 
-		var errorReports = _errors
+		var reportMessages = _messages
 			.Select(x => new ReportMessage(x))
 			.ToList();
 
 		// Generate and combine the HTML tables
-		var summaryReportHtml = new Table<ReportSummary>([summaryReport])
+		var reportSummaryHtml = new Table<ReportSummary>([reportSummary])
 			.ToHtml();
-		var projectsReportHtml = new Table<ReportProject>(projects)
+		var reportProjectsHtml = new Table<ReportProject>(reportProjects)
 			.ToHtml();
-		var errorsReportHtml = new Table<ReportMessage>(errorReports)
+		var reportMessagesHtml = new Table<ReportMessage>(reportMessages)
 			.ToHtml();
 
 		return string.Join(null, 
-			$"{DivStart}{summaryReportHtml}{DivEnd}", 
-			$"{DivStart}{projectsReportHtml}{DivEnd}",
-			$"{DivStart}{errorsReportHtml}{DivEnd}");
+			$"{DivStart}{reportSummaryHtml}{DivEnd}", 
+			$"{DivStart}{reportProjectsHtml}{DivEnd}",
+			$"{DivStart}{reportMessagesHtml}{DivEnd}");
 	}
 }
 
