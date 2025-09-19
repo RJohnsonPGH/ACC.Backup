@@ -53,6 +53,7 @@ services.AddSingleton(jobIdProvider);
 // Merge this into AddBackupService?
 services.AddSingleton<ILocalStorageRepositoryPathProvider, DatabaseLocalStorageRepositoryPathProvider>();
 services.AddSingleton<IExclusionProvider, DatabaseExclusionProvider>();
+services.AddSingleton<IDegreeOfParallelismProvider, DatabaseDegreeOfParallelismProvider>();
 
 services.AddBackupService(configure =>
 {

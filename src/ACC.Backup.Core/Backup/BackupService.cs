@@ -10,7 +10,7 @@ using ACC.Client;
 namespace ACC.Backup.Core.Backup;
 
 public sealed partial class BackupService(ILogger<BackupService> logger, 
-	IExclusionService exclusionService, IAccApiClient client, IRepository repositoryService, IReportingService reportService) : IBackupService
+	IExclusionService exclusionService, IAccApiClient client, IRepository repositoryService, IReportingService reportService, IDegreeOfParallelismProvider degreeOfParallelismProvider) : IBackupService
 {
 	/// <summary>
 	/// Enumerates all hubs in the tenant, reporting progress to the provided IProgress instance.
@@ -61,10 +61,9 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 	/// Enumerates all projects in all hubs, reporting progress to the provided IProgress instance.
 	/// </summary>
 	/// <param name="progress">A Progress instance that will trigger when a project is discovered, when a hub is enumerated, and when the enumeration has finished.</param>
-	/// <param name="degreeOfParalellism">An int that indicates the number of parallel API calls to be made.</param>
 	/// <param name="cancellationToken">A CancellationToken to observe while waiting for the task to complete.</param>
 	/// <returns>Returns a task that completes when the enumeration has finished.</returns>
-	public async Task EnumerateProjectsAsync(IProgress<DiscoveryProgress> progress, int degreeOfParalellism, CancellationToken cancellationToken = default)
+	public async Task EnumerateProjectsAsync(IProgress<DiscoveryProgress> progress, CancellationToken cancellationToken = default)
 	{
 		try
 		{
@@ -73,7 +72,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 				_hubs.Reader.ReadAllAsync(cancellationToken),
 				new ParallelOptions()
 				{
-					MaxDegreeOfParallelism = degreeOfParalellism,
+					MaxDegreeOfParallelism = degreeOfParallelismProvider.DegreeOfParallelism,
 					CancellationToken = cancellationToken
 				},
 				async (hub, token) =>
@@ -118,10 +117,9 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 	/// Enumerates all files in all projects, reporting progress to the provided IProgress instance.
 	/// </summary>
 	/// <param name="progress">A Progress instance that will trigger when a file is discovered, a project is enumerated, and when the enumeration has finished.</param>
-	/// <param name="degreeOfParalellism">An int that indicates the number of parallel API calls to be made.</param>
 	/// <param name="cancellationToken">A CancellationToken to observe while waiting for the task to complete.</param>
 	/// <returns>Returns a task that completes when the enumeration has finished.</returns>
-	public async Task EnumerateFilesAsync(IProgress<DiscoveryProgress> progress, int degreeOfParalellism, CancellationToken cancellationToken = default)
+	public async Task EnumerateFilesAsync(IProgress<DiscoveryProgress> progress, CancellationToken cancellationToken = default)
 	{
 		try
 		{
@@ -130,7 +128,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 				_projects.Reader.ReadAllAsync(cancellationToken),
 				new ParallelOptions()
 				{
-					MaxDegreeOfParallelism = degreeOfParalellism,
+					MaxDegreeOfParallelism = degreeOfParallelismProvider.DegreeOfParallelism,
 					CancellationToken = cancellationToken
 				},
 				async (project, token) =>
@@ -165,17 +163,16 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 	/// Backs up all files in all projects, reporting progress to the provided IProgress instance.
 	/// </summary>
 	/// <param name="progress"></param>
-	/// <param name="degreeOfParalellism">An int that indicates the number of parallel downloads.</param>
 	/// <param name="cancellationToken">A CancellationToken to observe while waiting for the task to complete.</param>
 	/// <returns>Returns a task that completes when the enumeration has finished.</returns>
-	public async Task BackupProjectFilesAsync(IProgress<DownloadProgress> progress, int degreeOfParalellism, CancellationToken cancellationToken = default)
+	public async Task BackupProjectFilesAsync(IProgress<DownloadProgress> progress, CancellationToken cancellationToken = default)
 	{
 		// Backup all files in all projects in parallel, based on the specified degree of parallelism
 		await Parallel.ForEachAsync(
 			_projectFiles.Reader.ReadAllAsync(cancellationToken),
 			new ParallelOptions()
 			{
-				MaxDegreeOfParallelism = degreeOfParalellism,
+				MaxDegreeOfParallelism = degreeOfParallelismProvider.DegreeOfParallelism,
 				CancellationToken = cancellationToken
 			},
 			async (item, token) =>

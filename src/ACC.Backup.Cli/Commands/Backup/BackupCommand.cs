@@ -3,8 +3,6 @@ using ACC.Backup.Cli.Data;
 using ACC.Backup.Cli.Logging;
 using ACC.Backup.Core.Backup;
 using ACC.Backup.Core.Backup.Progress;
-using ACC.Client.Authentication.Credentials;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -43,8 +41,6 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                 int noBackupFileCount = 0;
 
                 // Display tasks
-                var loadConfigurationDisplayTask = context.AddTask("Reading configuration from database", true, 1)
-                    .IsIndeterminate();
                 var discoverHubsInTenantDisplayTask = context.AddTask("Discovering hubs in tenant", false, 1)
                     .IsIndeterminate();
                 var discoverProjectsInHubsDisplayTask = context.AddTask("Discovering projects in hubs", false, 1)
@@ -54,22 +50,6 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                 var downloadDisplayTask = context.AddTask("Downloading files", false, 1)
                     .IsIndeterminate();
                 var generateReportDisplayTask = context.AddTask("Generating report", false, 1);
-
-#warning refactor this out to be a parallalelism provider
-				int degreeOfParalellism;
-				try
-                {
-					degreeOfParalellism = Math.Min(await dbContext.Credentials.CountAsync() * 2, 16);
-
-					loadConfigurationDisplayTask.Value++;
-                    loadConfigurationDisplayTask.StopTask();
-                }
-                catch (Exception ex)
-                {
-                    logger.LogCritical(ex, "Failed to load backup configuration from the database.");
-                    AnsiConsole.Markup("[red]Failed to load backup configuration from the database.[/]");
-                    return 1;
-                }
 
 				// Backup tasks
 				var progress = new Progress<DiscoveryProgress>(x =>
@@ -120,8 +100,8 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                 discoverFilesInProjectsDisplayTask.StartTask();
                 downloadDisplayTask.StartTask();
 				var retrieveHubsTask = backupService.EnumerateHubsAsync(progress);
-                var retrieveProjectsTask = backupService.EnumerateProjectsAsync(progress, degreeOfParalellism);
-                var retrieveFilesTask = backupService.EnumerateFilesAsync(progress, degreeOfParalellism);
+                var retrieveProjectsTask = backupService.EnumerateProjectsAsync(progress);
+                var retrieveFilesTask = backupService.EnumerateFilesAsync(progress);
 
 				var fileDownloadProgress = new Progress<DownloadProgress>(x =>
                 {
@@ -137,7 +117,7 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
 					}
 
                 });
-                var downloadFilesTask = backupService.BackupProjectFilesAsync(fileDownloadProgress, degreeOfParalellism);
+                var downloadFilesTask = backupService.BackupProjectFilesAsync(fileDownloadProgress);
 
                 await Task.WhenAll(retrieveHubsTask, retrieveProjectsTask, retrieveFilesTask, downloadFilesTask);
 
