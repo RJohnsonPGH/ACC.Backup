@@ -139,8 +139,9 @@ app.Configure(config =>
 	});
 
 	config.AddCommand<BackupCommand>("backup")
-		.WithDescription("Execute ACC backup.");
+		.WithDescription("Execute ACC backup.")
+		.WithExample("backup --job <JOBID>");
 });
 
-app.Run(args);
+await app.RunAsync(args);
 return 0;

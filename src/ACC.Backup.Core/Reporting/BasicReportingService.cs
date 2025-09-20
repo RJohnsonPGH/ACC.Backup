@@ -88,8 +88,8 @@ public sealed class BasicReportingService(ILogger<BasicReportingService> logger)
 				}
 
 				return new ReportProject(
-					HubName: hub?.Name ?? "(Unknown Hub)",
-					ProjectName: project?.Name ?? "(Unknown Project)",
+					HubName: hub?.Name ?? "Unknown Hub",
+					ProjectName: project?.Name ?? "Unknown Project",
 					TotalFiles: x.Count(),
 					UpToDateFiles: x.Count(x => x.State == ReportingState.UpToDate),
 					SuccessfulFiles: x.Count(x => x.State == ReportingState.Successful),
