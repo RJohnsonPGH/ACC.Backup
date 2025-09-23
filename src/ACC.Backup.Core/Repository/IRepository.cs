@@ -27,6 +27,6 @@ public interface IRepository
 	/// </summary>
 	/// <param name="reportHtml"></param>
 	/// <param name="cancellationToken"></param>
-	/// <returns></returns>
-	Task SaveReportToRepositoryAsync(string reportHtml, CancellationToken cancellationToken = default);
+	/// <returns>True if the report was successfully saved, false if it failed to save.</returns>
+	Task<bool> SaveReportToRepositoryAsync(string reportHtml, CancellationToken cancellationToken = default);
 }

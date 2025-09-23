@@ -105,6 +105,18 @@ public sealed class BasicReportingService(ILogger<BasicReportingService> logger)
 			FailedFiles: _files.Count(x => x.State == ReportingState.Failed)
 		);
 
+		var reportHubExclusions = _hubs
+			.Where(x => x.Value.IsExcluded)
+			.Select(x => new ReportExclusion(x.Value.Id, "Hub", x.Value.Name));
+
+		var reportProjectExclusions = _projects
+			.Where(x => x.Value.IsExcluded)
+			.Select(x => new ReportExclusion(x.Value.Id, "Project", x.Value.Name));
+
+		var reportExclusions = reportHubExclusions
+			.Concat(reportProjectExclusions)
+			.ToList();
+
 		var reportMessages = _messages
 			.Select(x => new ReportMessage(x))
 			.ToList();
@@ -114,15 +126,30 @@ public sealed class BasicReportingService(ILogger<BasicReportingService> logger)
 			.ToHtml();
 		var reportProjectsHtml = new Table<ReportProject>(reportProjects)
 			.ToHtml();
+		var reportExclusionsHtml = new Table<ReportExclusion>(reportExclusions)
+			.ToHtml();
 		var reportMessagesHtml = new Table<ReportMessage>(reportMessages)
 			.ToHtml();
 
 		return string.Join(null, 
 			$"{DivStart}{reportSummaryHtml}{DivEnd}", 
 			$"{DivStart}{reportProjectsHtml}{DivEnd}",
+			$"{DivStart}{reportExclusionsHtml}{DivEnd}",
 			$"{DivStart}{reportMessagesHtml}{DivEnd}");
 	}
 }
+
+/// <summary>
+/// An exclusion to be included in the report.
+/// </summary>
+/// <param name="ExcludedId"></param>
+/// <param name="Type"></param>
+/// <param name="Name"></param>
+internal sealed record ReportExclusion(
+	string ExcludedId,
+	string Type,
+	string Name
+);
 
 /// <summary>
 /// A summary of the backup operation.

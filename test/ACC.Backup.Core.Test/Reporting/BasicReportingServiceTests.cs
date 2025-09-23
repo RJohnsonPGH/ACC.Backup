@@ -39,12 +39,12 @@ public sealed class BasicReportingServiceTests(ITestOutputHelper outputHelper)
 		var html = reportingService.GenerateReport();
 
 		// Assert
-		var doc = new HtmlDocument();
-		doc.LoadHtml(html);
+		var htmlDocument = new HtmlDocument();
+		htmlDocument.LoadHtml(html);
 
-		var tables = doc.DocumentNode.SelectNodes("//table");
+		var tables = htmlDocument.DocumentNode.SelectNodes("//table");
 		Assert.NotNull(tables);
-		Assert.Equal(3, tables.Count);
+		Assert.Equal(4, tables.Count);
 
 		var summaryCells = tables[0].SelectNodes(".//tr[2]/td");
 		Assert.Equal("3", summaryCells[0].InnerText);
@@ -60,7 +60,12 @@ public sealed class BasicReportingServiceTests(ITestOutputHelper outputHelper)
 		Assert.Equal("1", projectCells[4].InnerText);
 		Assert.Equal("1", projectCells[5].InnerText);
 
-		var messageCell = tables[2].SelectSingleNode(".//tr[2]/td");
+		var exclusionCells = tables[2].SelectNodes(".//tr[2]/td");
+		Assert.Equal("hub2", exclusionCells[0].InnerText);
+		Assert.Equal("Hub", exclusionCells[1].InnerText);
+		Assert.Equal("Test Hub 2", exclusionCells[2].InnerText);
+
+		var messageCell = tables[3].SelectSingleNode(".//tr[2]/td");
 		Assert.Equal("This is a test message.", messageCell.InnerText);
 	}
 }

@@ -69,4 +69,10 @@ internal static partial class LoggerExtensions
 	// Report
 	[LoggerMessage(Level = LogLevel.Error, Message = "Report key not found: Type = {Type}, ID = {Id}")]
 	internal static partial void LogErrorReportKeyNotFound(this ILogger logger, string type, string id);
+
+	[LoggerMessage(Level = LogLevel.Information, Message = "Report saved: Path = {Path}")]
+	internal static partial void LogInformationReportSaved(this ILogger logger, string path);
+
+	[LoggerMessage(Level = LogLevel.Error, Message = "Report save failed")]
+	internal static partial void LogErrorReportSaveFailed(this ILogger logger, Exception ex);
 }

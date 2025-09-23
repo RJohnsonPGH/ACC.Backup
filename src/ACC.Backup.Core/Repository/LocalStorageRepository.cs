@@ -25,7 +25,7 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 			.Options;
 
 		var context = new RepositoryDbContext(options);
-		//await context.Database.EnsureCreatedAsync(cancellationToken);
+		await context.Database.EnsureCreatedAsync(cancellationToken);
 		return context;
 	}
 
@@ -43,9 +43,10 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 		try
 		{
 			// Combine the root path with the file relative path and then ensure it is created
-			var destinationPath = Path.Combine(pathProvider.RepositoryPath, item.ProjectId, item.Urn.Id[..5], item.Urn.Id, Path.GetFileName(signedUri.LocalPath));
+			var destinationFolder = Path.Combine(pathProvider.RepositoryPath, item.ProjectId, item.Urn.Id, $"{item.Version}");
+			var destinationPath = Path.Combine(destinationFolder, Path.GetFileName(signedUri.LocalPath));
 			logger.LogTraceItemDownloadDestination(item.ProjectId, item.Id, item.Version, destinationPath);
-			Directory.CreateDirectory(destinationPath);
+			Directory.CreateDirectory(destinationFolder);
 
 			// Perform the HTTP request and verify the response indicates success
 			var response = await client.GetAsync(signedUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -60,20 +61,24 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 			logger.LogTraceBackupFileSize(item.ProjectId, item.Id, item.Version, totalBytes ?? 0);
 
 			// Download the file in chunks, reporting progress
-			//await using var fileStream = File.Open(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-			//await using var httpStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+			await using var fileStream = File.Open(destinationPath, FileMode.Create);
+			await using var httpStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
-			//var buffer = new byte[81920];
-			//long totalRead = 0;
-			//int read;
-			//while ((read = await httpStream.ReadAsync(buffer, cancellationToken)) > 0)
-			//{
-			//	cancellationToken.ThrowIfCancellationRequested();
+			var buffer = new byte[81920];
+			long totalRead = 0;
+			int read;
+			while ((read = await httpStream.ReadAsync(buffer, cancellationToken)) > 0)
+			{
+				cancellationToken.ThrowIfCancellationRequested();
 
-			//	await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-			//	totalRead += read;
-			//	progress.Report(totalBytes.HasValue ? (double)totalRead / totalBytes.Value * 100 : 0);
-			//}
+				await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+				totalRead += read;
+				progress.Report(totalBytes.HasValue ? (double)totalRead / totalBytes.Value * 100 : 0);
+			}
+
+			// Update the file creation and modification times to match the item's last modified time
+			File.SetCreationTimeUtc(destinationPath, item.LastModifiedTime);
+			File.SetLastWriteTimeUtc(destinationPath, item.LastModifiedTime);
 
 			// Ensure progress is reported as 100% on completion
 			progress.Report(100);
@@ -138,19 +143,23 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 		return repoItem.LatestVersion;
 	}
 
-	public async Task SaveReportToRepositoryAsync(string reportHtml, CancellationToken cancellationToken)
+	public async Task<bool> SaveReportToRepositoryAsync(string reportHtml, CancellationToken cancellationToken)
 	{
 		try
 		{
 			var reportDirectory = Path.Combine(pathProvider.RepositoryPath, "reports");
-			Directory.CreateDirectory(reportDirectory);
 			var reportPath = Path.Combine(reportDirectory, $"{DateTime.Now:yyyy-MM-dd-HH-mm-ss}.html");
+			
+			Directory.CreateDirectory(reportDirectory);
 			await File.WriteAllTextAsync(reportPath, reportHtml, cancellationToken);
-			//logger.LogInformationReportSaved(reportPath);
+
+			logger.LogInformationReportSaved(reportPath);
+			return true;
 		}
 		catch (Exception ex)
 		{
-			//logger.LogErrorReportSaveFailed(ex);
+			logger.LogErrorReportSaveFailed(ex);
+			return false;
 		}
 	}
 }
