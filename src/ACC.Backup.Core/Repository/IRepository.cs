@@ -1,4 +1,5 @@
-﻿using ACC.Client.Entities;
+﻿using ACC.Backup.Core.Download;
+using ACC.Client.Entities;
 
 namespace ACC.Backup.Core.Repository;
 
@@ -20,7 +21,7 @@ public interface IRepository
 	/// <param name="signedUri"></param>
 	/// <param name="cancellationToken"></param>
 	/// <returns>True if the backup was succesful, false if it failed.</returns>
-	Task<bool> BackupItemToRepositoryAsync(IProgress<double> progress, Item item, Uri signedUri, CancellationToken cancellationToken = default);
+	Task<bool> BackupItemToRepositoryAsync(IProgress<DownloadProgress> progress, Item item, Uri signedUri, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Saves the provided HTML report to the repository.

@@ -10,7 +10,7 @@ namespace ACC.Backup.Core.Test.Repository;
 public sealed class LocalStorageRepositoryTests(ITestOutputHelper outputHelper)
 {
 	[Fact]
-	public async Task BackupItemToRepositoryAsync_InsertsRecord_UsingInMemorySqlite()
+	public async Task BackupItemToRepositoryAsync_DownloadsFile_Successfully()
 	{
 		// Arrange
 		var item = new Item
@@ -58,7 +58,7 @@ public sealed class LocalStorageRepositoryTests(ITestOutputHelper outputHelper)
 
 		// Act
 		var result = await repository.BackupItemToRepositoryAsync(
-			new Progress<double>(),
+			new Progress<Download.DownloadProgress>(),
 			item,
 			new Uri("https://example.com/file.dat"),
 			TestContext.Current.CancellationToken);

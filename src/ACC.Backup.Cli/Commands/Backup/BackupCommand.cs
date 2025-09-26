@@ -1,5 +1,5 @@
-﻿using System.ComponentModel;
-using ACC.Backup.Cli.Data;
+﻿using System.Collections.Concurrent;
+using System.ComponentModel;
 using ACC.Backup.Cli.Logging;
 using ACC.Backup.Core.Backup;
 using ACC.Backup.Core.Backup.Progress;
@@ -10,7 +10,7 @@ using Spectre.Console.Rendering;
 
 namespace ACC.Backup.Cli.Commands.Backup;
 
-public sealed partial class BackupCommand(ILogger<BackupCommand> logger, ConfigurationDbContext dbContext, IBackupService backupService) 
+public sealed partial class BackupCommand(ILogger<BackupCommand> logger, IBackupService backupService) 
     : AsyncCommand<BackupCommand.Settings>
 {
     public sealed class Settings : CommandSettings
@@ -32,13 +32,13 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                 new ElapsedTimeColumn(),
                 new SpinnerColumn(),
             ])
+            .HideCompleted(true)
             .UseRenderHook((renderable, tasks) => RenderHook(renderable, tasks))
-            .StartAsync(async context =>
+            .StartAsync(async context => 
             {
                 int hubCount = 0;
                 int projectCount = 0;
-                int backupFileCount = 0;
-                int noBackupFileCount = 0;
+                int fileCount = 0;
 
                 // Display tasks
                 var discoverHubsInTenantDisplayTask = context.AddTask("Discovering hubs in tenant", false, 1)
@@ -49,7 +49,6 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
 				    .IsIndeterminate();
                 var downloadDisplayTask = context.AddTask("Downloading files", false, 1)
                     .IsIndeterminate();
-                var generateReportDisplayTask = context.AddTask("Generating report", false, 1);
 
 				// Backup tasks
 				var progress = new Progress<DiscoveryProgress>(x =>
@@ -64,7 +63,7 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
 							discoverFilesInProjectsDisplayTask.MaxValue = Interlocked.Increment(ref projectCount);
 							break;
                         case DiscoveryProgress.FileDiscovered:
-							downloadDisplayTask.MaxValue = Interlocked.Increment(ref backupFileCount);
+							downloadDisplayTask.MaxValue = Interlocked.Increment(ref fileCount);
 							break;
 						// Enumeration
 						case DiscoveryProgress.TenantEnumerated:
@@ -76,22 +75,22 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                         case DiscoveryProgress.ProjectEnumerated:
                             discoverFilesInProjectsDisplayTask.Increment(1);
                             break;
-                        case DiscoveryProgress.BackupFileEnumerated:
-							noBackupFileCount = Interlocked.Increment(ref noBackupFileCount);
-							break;
 						// Complete
 						case DiscoveryProgress.HubEnumerationComplete:
 							discoverProjectsInHubsDisplayTask.IsIndeterminate(false);
 							discoverHubsInTenantDisplayTask.StopTask();
-                            break;
+                            _log.Add($"[green]Hub discovery complete. Hubs found: {hubCount}.[/]");
+							break;
                         case DiscoveryProgress.ProjectEnumerationComplete:
 							discoverFilesInProjectsDisplayTask.IsIndeterminate(false);
 							discoverProjectsInHubsDisplayTask.StopTask();
-                            break;
+							_log.Add($"[green]Project discovery complete. Projects found: {projectCount}.[/]");
+							break;
                         case DiscoveryProgress.FileEnumerationComplete:
 							downloadDisplayTask.IsIndeterminate(false);
 							discoverFilesInProjectsDisplayTask.StopTask();
-                            break;
+							_log.Add($"[green]File discovery complete. Files found: {fileCount}.[/]");
+							break;
 					};
                 });
 
@@ -103,28 +102,38 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
                 var retrieveProjectsTask = backupService.EnumerateProjectsAsync(progress);
                 var retrieveFilesTask = backupService.EnumerateFilesAsync(progress);
 
+                var downloadDisplayTasks = new ConcurrentDictionary<string, ProgressTask>();
 				var fileDownloadProgress = new Progress<DownloadProgress>(x =>
                 {
-                    switch (x.Status)
+                    if (!downloadDisplayTasks.TryGetValue(x.Id, out var existingTask))
+					{
+                        existingTask = context.AddTask($"Downloading: {x.Name}");
+                        existingTask.IsIndeterminate(!x.BytesTotal.HasValue);
+						downloadDisplayTasks[x.Id] = existingTask;
+					}
+
+					switch (x.Status)
                     {
-                        case DownloadProgress.DownloadStatus.Failed:
-                            _log.Add($"[red]Failed to download file:[/] {x.Id} - {x.Name}");
+						case DownloadProgress.DownloadStatus.InProgress:
+							existingTask.Value = x.PercentComplete;
+							break;
+						case DownloadProgress.DownloadStatus.Failed:
+                            existingTask.Value = 100;
+							existingTask.StopTask();
+							_log.Add($"[red]Failed to download file:[/] {x.Id} - {x.Name}");
 							downloadDisplayTask.Increment(1);
                             break;
 						case DownloadProgress.DownloadStatus.Completed:
+							existingTask.Value = 100;
+							existingTask.StopTask();
 							downloadDisplayTask.Increment(1);
 							break;
 					}
-
                 });
                 var downloadFilesTask = backupService.BackupProjectFilesAsync(fileDownloadProgress);
 
                 await Task.WhenAll(retrieveHubsTask, retrieveProjectsTask, retrieveFilesTask, downloadFilesTask);
-
-                generateReportDisplayTask.StartTask();
 				await backupService.SaveReportAsync();
-                generateReportDisplayTask.Increment(1);
-				generateReportDisplayTask.StopTask();
 
 				return 0;
 			});
@@ -147,17 +156,13 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
 			new Rule(),
 			new Markup($"[bold]Details[/]"),
 			new Rule(),
-            new Text($"Hubs discovered in tenant: {tasks[2].MaxValue}"),
-            new Text($"Projects discovered in hubs: {tasks[3].MaxValue}"),
-            new Text($"Files discovered in projects: {tasks[4].MaxValue}"),
+            new Text($"Hubs discovered in tenant: {tasks[1].MaxValue}"),
+            new Text($"Projects discovered in hubs: {tasks[2].MaxValue}"),
+            new Text($"Files discovered in projects: {tasks[3].MaxValue}"),
 		};
 
-        //var downloadRows = _downloadTasks
-        //    .Where(x => x.Value.Status == DownloadProgress.DownloadStatus.InProgress)
-        //    .Select(x => new Markup($"Downloading {x.Value.Name} ({x.Value.PercentComplete})"));
-
         var taskPanel = new Panel(
-            new Rows(taskPanelRows)//.Concat(downloadRows))
+            new Rows(taskPanelRows)
         );
 
         var latestLogs = _log.Count > 5 ?
@@ -174,6 +179,6 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, Configu
             )
         );
 
-        return new Rows(taskPanel, logPanel);//, computerInformationPanel, logPanel);
+        return new Rows(taskPanel, logPanel);
 	}
 }

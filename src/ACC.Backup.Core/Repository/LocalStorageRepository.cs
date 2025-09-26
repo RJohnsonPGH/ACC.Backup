@@ -1,4 +1,5 @@
 ﻿using ACC.Backup.Core.Data;
+using ACC.Backup.Core.Download;
 using ACC.Backup.Core.Logging;
 using ACC.Client.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,17 @@ namespace ACC.Backup.Core.Repository;
 /// <param name="client"></param>
 public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepository> logger, HttpClient client, ILocalStorageRepositoryPathProvider pathProvider) : IRepository
 {
+	private readonly Lazy<Task> _initializationTask = new(async () =>
+	{
+		var databasePath = Path.Combine(pathProvider.RepositoryPath, "repository.db");
+		var options = new DbContextOptionsBuilder<RepositoryDbContext>()
+			.UseSqlite($"Data Source={databasePath}")
+			.Options;
+
+		var context = new RepositoryDbContext(options);
+		await context.Database.EnsureCreatedAsync();
+	});
+
 	/// <summary>
 	/// Creates a new instance of the <see cref="RepositoryDbContext"/> using the current repository path.
 	/// </summary>
@@ -20,13 +32,14 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 	/// <exception cref="InvalidOperationException">Thrown if the repository has not been initialized with a path</exception>
 	private async Task<RepositoryDbContext> CreateRepositoryContextAsync(CancellationToken cancellationToken)
 	{
+		await _initializationTask.Value;
+
+		var databasePath = Path.Combine(pathProvider.RepositoryPath, "repository.db");
 		var options = new DbContextOptionsBuilder<RepositoryDbContext>()
-			.UseSqlite($"Data Source={Path.Combine(pathProvider.RepositoryPath, "repository.db")}")
+			.UseSqlite($"Data Source={databasePath}")
 			.Options;
 
-		var context = new RepositoryDbContext(options);
-		await context.Database.EnsureCreatedAsync(cancellationToken);
-		return context;
+		return new RepositoryDbContext(options);
 	}
 
 	/// <summary>
@@ -38,16 +51,11 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 	/// <param name="cancellationToken"></param>
 	/// <returns></returns>
 	/// <exception cref="InvalidOperationException">Thrown if the repository has not been initialized.</exception>
-	public async Task<bool> BackupItemToRepositoryAsync(IProgress<double> progress, Item item, Uri signedUri, CancellationToken cancellationToken)
+	public async Task<bool> BackupItemToRepositoryAsync(IProgress<DownloadProgress> progress, Item item, Uri signedUri, CancellationToken cancellationToken)
 	{
+		var tempPath = Path.GetTempFileName();
 		try
 		{
-			// Combine the root path with the file relative path and then ensure it is created
-			var destinationFolder = Path.Combine(pathProvider.RepositoryPath, item.ProjectId, item.Urn.Id, $"{item.Version}");
-			var destinationPath = Path.Combine(destinationFolder, Path.GetFileName(signedUri.LocalPath));
-			logger.LogTraceItemDownloadDestination(item.ProjectId, item.Id, item.Version, destinationPath);
-			Directory.CreateDirectory(destinationFolder);
-
 			// Perform the HTTP request and verify the response indicates success
 			var response = await client.GetAsync(signedUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 			if (!response.IsSuccessStatusCode)
@@ -61,7 +69,7 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 			logger.LogTraceBackupFileSize(item.ProjectId, item.Id, item.Version, totalBytes ?? 0);
 
 			// Download the file in chunks, reporting progress
-			await using var fileStream = File.Open(destinationPath, FileMode.Create);
+			await using var fileStream = File.Open(tempPath, FileMode.Create);
 			await using var httpStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
 			var buffer = new byte[81920];
@@ -73,15 +81,22 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 
 				await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
 				totalRead += read;
-				progress.Report(totalBytes.HasValue ? (double)totalRead / totalBytes.Value * 100 : 0);
+				progress.Report(new(totalRead, totalBytes ?? 0));
 			}
+#warning refactor download service into separate service
+			await fileStream.DisposeAsync();
+
+			// Combine the root path with the file relative path and then ensure it is created
+			var destinationFolder = Path.Combine(pathProvider.RepositoryPath, item.ProjectId, item.Urn.Id, $"{item.Version}");
+			var destinationPath = Path.Combine(destinationFolder, item.Name);
+			logger.LogTraceItemDownloadDestination(item.ProjectId, item.Id, item.Version, destinationPath);
+			Directory.CreateDirectory(destinationFolder);
+			File.Move(tempPath, destinationPath, true);
 
 			// Update the file creation and modification times to match the item's last modified time
 			File.SetCreationTimeUtc(destinationPath, item.LastModifiedTime);
 			File.SetLastWriteTimeUtc(destinationPath, item.LastModifiedTime);
 
-			// Ensure progress is reported as 100% on completion
-			progress.Report(100);
 			logger.LogTraceItemDownloadedSuccessfully(item.ProjectId, item.Id, item.Version);
 
 			// Update the database with the new item version
@@ -116,6 +131,7 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 		}
 		catch (Exception ex)
 		{
+			File.Delete(tempPath);
 			logger.LogErrorItemDownloadFailed(ex, item.ProjectId, item.Id, item.Version);
 			return false;
 		}

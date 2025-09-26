@@ -23,9 +23,8 @@ public enum DiscoveryProgress
 
 	[Description("A file has been discovered.")]
 	FileDiscovered,
-
-	[Description("A file has been determined to not need backup.")]
-	BackupFileEnumerated,
+	//[Description("All versions of a file have been discovered.")]
+	//FileEnumerated,
 
 	[Description("All tenants accessible with the credentials have been discovered.")]
 	HubEnumerationComplete,

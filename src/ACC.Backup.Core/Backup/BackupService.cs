@@ -6,6 +6,7 @@ using ACC.Backup.Core.Logging;
 using Microsoft.Extensions.Logging;
 using ACC.Client.Entities;
 using ACC.Client;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace ACC.Backup.Core.Backup;
 
@@ -177,21 +178,18 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 			},
 			async (item, token) =>
 			{
-				var itemProgress = new DownloadProgress()
-				{
-					Id = item.Id,
-					Name = item.Name,
-					PercentComplete = 0,
-					Status = DownloadProgress.DownloadStatus.InProgress
-				};
-
 				// Check if file has a download URL, and fail it immediately if it does not
 				if (item.DownloadUrl is null)
 				{
-					itemProgress.Status = DownloadProgress.DownloadStatus.Failed;
 					reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.Failed);
 					reportService.AddMessage($"No download URI for item: {item.ProjectName} - {item.Name}");
-					progress.Report(itemProgress);
+					progress.Report(new()
+					{
+						Id = item.Id,
+						Name = item.Name,
+						PercentComplete = 0,
+						Status = DownloadProgress.DownloadStatus.Failed
+					});
 					logger.LogErrorNoDownloadUri(item.Id, item.Name);
 					return;
 				}
@@ -213,31 +211,47 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 				}
 
 				// The file needs to be backed up, so get a signed URL and back it up
-				itemProgress.Status = DownloadProgress.DownloadStatus.InProgress;
 				var downloadUri = new Uri(item.DownloadUrl);
 				var s3DownloadUri = await client.GetS3DownloadUriAsync(downloadUri, token);
 
-				var downloadProgress = new Progress<double>(x =>
+				var downloadProgress = new Progress<Download.DownloadProgress>(x =>
 				{
-					itemProgress.PercentComplete = x;
-					progress.Report(itemProgress);
+					progress.Report(new()
+					{
+						Id = item.Id,
+						Name = item.Name,
+						BytesDownloaded = x.BytesDownloaded,
+						BytesTotal = x.BytesTotal,
+						PercentComplete = x.BytesTotal == 0 ? 0 : (double)x.BytesDownloaded / x.BytesTotal * 100.0,
+						Status = DownloadProgress.DownloadStatus.InProgress
+					});
 				});
 				var backupResult = await repositoryService.BackupItemToRepositoryAsync(downloadProgress, item, s3DownloadUri, token);
 
 				// If the backup failed, report it and log it
 				if (!backupResult)
 				{
-					itemProgress.Status = DownloadProgress.DownloadStatus.Failed;
 					reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.Failed);
-					progress.Report(itemProgress);
+					progress.Report(new()
+					{
+						Id = item.Id,
+						Name = item.Name,
+						PercentComplete = 0,
+						Status = DownloadProgress.DownloadStatus.Failed
+					});
 					logger.LogErrorFileDownloadFailed(item.Id, item.Name, item.Version);
 					return;
 				}
 
 				// The backup was succesful, report it and log it
-				itemProgress.Status = DownloadProgress.DownloadStatus.Completed;
 				reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.Successful);
-				progress.Report(itemProgress);
+				progress.Report(new()
+				{
+					Id = item.Id,
+					Name = item.Name,
+					PercentComplete = 100,
+					Status = DownloadProgress.DownloadStatus.Completed
+				});
 				logger.LogDebugFileDownloadComplete(item.Id, item.Name, item.Version);
 			}
 		);

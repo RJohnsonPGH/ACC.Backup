@@ -82,7 +82,7 @@ services.AddLogging(builder =>
 	builder
 		.AddFilter("Microsoft", LogLevel.Warning)
 		.AddFilter("System", LogLevel.Warning)
-		.AddFilter("ACC.Backup", LogLevel.Debug);
+		.AddFilter("ACC.Backup", LogLevel.Trace);
 	builder.AddFile("log.txt");
 });
 
