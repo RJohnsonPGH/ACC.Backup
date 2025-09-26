@@ -7,11 +7,12 @@ using Microsoft.Extensions.Logging;
 using ACC.Client.Entities;
 using ACC.Client;
 using static System.Net.Mime.MediaTypeNames;
+using ACC.Backup.Core.Download;
 
 namespace ACC.Backup.Core.Backup;
 
 public sealed partial class BackupService(ILogger<BackupService> logger, 
-	IExclusionService exclusionService, IAccApiClient client, IRepository repositoryService, IReportingService reportService, IDegreeOfParallelismProvider degreeOfParallelismProvider) : IBackupService
+	IExclusionService exclusionService, IAccApiClient client, IDownloadService downloadService, IRepository repositoryService, IReportingService reportService, IDegreeOfParallelismProvider degreeOfParallelismProvider) : IBackupService
 {
 	/// <summary>
 	/// Enumerates all hubs in the tenant, reporting progress to the provided IProgress instance.
@@ -166,7 +167,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 	/// <param name="progress"></param>
 	/// <param name="cancellationToken">A CancellationToken to observe while waiting for the task to complete.</param>
 	/// <returns>Returns a task that completes when the enumeration has finished.</returns>
-	public async Task BackupProjectFilesAsync(IProgress<DownloadProgress> progress, CancellationToken cancellationToken = default)
+	public async Task BackupProjectFilesAsync(IProgress<BackupProgress> progress, CancellationToken cancellationToken = default)
 	{
 		// Backup all files in all projects in parallel, based on the specified degree of parallelism
 		await Parallel.ForEachAsync(
@@ -188,7 +189,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 						Id = item.Id,
 						Name = item.Name,
 						PercentComplete = 0,
-						Status = DownloadProgress.DownloadStatus.Failed
+						Status = BackupProgress.BackupStatus.Failed
 					});
 					logger.LogErrorNoDownloadUri(item.Id, item.Name);
 					return;
@@ -204,7 +205,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 						Id = item.Id,
 						Name = item.Name,
 						PercentComplete = 100,
-						Status = DownloadProgress.DownloadStatus.Completed
+						Status = BackupProgress.BackupStatus.Completed
 					});
 					logger.LogTraceDownloadSkipped(item.Id, item.Name, item.Version);
 					return;
@@ -214,7 +215,7 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 				var downloadUri = new Uri(item.DownloadUrl);
 				var s3DownloadUri = await client.GetS3DownloadUriAsync(downloadUri, token);
 
-				var downloadProgress = new Progress<Download.DownloadProgress>(x =>
+				var downloadProgress = new Progress<DownloadProgress>(x =>
 				{
 					progress.Report(new()
 					{
@@ -223,13 +224,14 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 						BytesDownloaded = x.BytesDownloaded,
 						BytesTotal = x.BytesTotal,
 						PercentComplete = x.BytesTotal == 0 ? 0 : (double)x.BytesDownloaded / x.BytesTotal * 100.0,
-						Status = DownloadProgress.DownloadStatus.InProgress
+						Status = BackupProgress.BackupStatus.InProgress
 					});
 				});
-				var backupResult = await repositoryService.BackupItemToRepositoryAsync(downloadProgress, item, s3DownloadUri, token);
+				var tempPath = Path.GetTempFileName();
+				var downloadResult = await downloadService.DownloadFileAsync(downloadProgress, s3DownloadUri, tempPath, token);
 
 				// If the backup failed, report it and log it
-				if (!backupResult)
+				if (!downloadResult)
 				{
 					reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.Failed);
 					progress.Report(new()
@@ -237,9 +239,19 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 						Id = item.Id,
 						Name = item.Name,
 						PercentComplete = 0,
-						Status = DownloadProgress.DownloadStatus.Failed
+						Status = BackupProgress.BackupStatus.Failed
 					});
+#warning do we need to log here? logging in the download service already
 					logger.LogErrorFileDownloadFailed(item.Id, item.Name, item.Version);
+					return;
+				}
+				logger.LogDebugFileDownloadComplete(item.Id, item.Name, item.Version);
+
+				// Ingest the file into the repository
+				var ingestResult = await repositoryService.IngestItemAsync(item, tempPath, token);
+				if (!ingestResult)
+				{
+					reportService.AddFile(item.Id, item.ProjectId, item.Name, ReportingState.Failed);
 					return;
 				}
 
@@ -250,14 +262,14 @@ public sealed partial class BackupService(ILogger<BackupService> logger,
 					Id = item.Id,
 					Name = item.Name,
 					PercentComplete = 100,
-					Status = DownloadProgress.DownloadStatus.Completed
+					Status = BackupProgress.BackupStatus.Completed
 				});
-				logger.LogDebugFileDownloadComplete(item.Id, item.Name, item.Version);
+				logger.LogDebugItemBackupComplete(item.Id, item.Name, item.Version);
 			}
 		);
 
 		// All files have been backed up
-		logger.LogInformationDownloadComplete();
+		logger.LogInformationBackupComplete();
 	}
 
 	public Task SaveReportAsync(CancellationToken cancellationToken = default)

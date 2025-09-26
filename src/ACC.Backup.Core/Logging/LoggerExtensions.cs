@@ -41,30 +41,24 @@ internal static partial class LoggerExtensions
 	[LoggerMessage(LogLevel.Debug, "Completed downloading: ID = {Id}, Name = {Name}, Version = {Version}")]
 	internal static partial void LogDebugFileDownloadComplete(this ILogger logger, string id, string name, int version);
 
-	[LoggerMessage(LogLevel.Error, "All downloads are complete.")]
-	internal static partial void LogInformationDownloadComplete(this ILogger logger);
+	[LoggerMessage(LogLevel.Debug, "Item backup complete: ID = {Id}, Name = {Name}, Version = {Version}")]
+	internal static partial void LogDebugItemBackupComplete(this ILogger logger, string id, string name, int version);
+
+	[LoggerMessage(LogLevel.Error, "Backup complete.")]
+	internal static partial void LogInformationBackupComplete(this ILogger logger);
 
 	// Repository
 	[LoggerMessage(LogLevel.Trace, Message = "Updated item metadata: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}")]
 	internal static partial void LogTraceItemMetadataUpdated(this ILogger logger, string projectId, string itemId, int version);
 
-	[LoggerMessage(LogLevel.Trace, Message = "Successfully downloaded item: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}")]
-	internal static partial void LogTraceItemDownloadedSuccessfully(this ILogger logger, string projectId, string itemId, int version);
+	[LoggerMessage(LogLevel.Trace, Message = "Successfully ingested item: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}, Path = {Path}")]
+	internal static partial void LogTraceItemIngestSuccessful(this ILogger logger, string projectId, string itemId, int version, string path);
 
-	[LoggerMessage(LogLevel.Error, Message = "Failed to downloaded item: Project ID = {ProjectId}, Item ID = {itemId}, Version = {Version}")]
-	internal static partial void LogErrorItemDownloadFailed(this ILogger logger, Exception ex, string projectId, string itemId, int version);
-
-	[LoggerMessage(LogLevel.Trace, Message = "Download item path: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}Path = {Path}")]
-	internal static partial void LogTraceItemDownloadDestination(this ILogger logger, string projectId, string itemId, int version, string path);
+	[LoggerMessage(LogLevel.Error, Message = "Failed to ingested item: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}")]
+	internal static partial void LogErrorItemIngestFailed(this ILogger logger, Exception ex, string projectId, string itemId, int version);
 
 	[LoggerMessage(LogLevel.Trace, Message = "Item repository state: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}")]
 	internal static partial void LogTraceItemRepositoryVersion(this ILogger logger, string projectId, string itemId, int version);
-
-	[LoggerMessage(Level = LogLevel.Error, Message = "Request not successful: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}, Status = {StatusCode}")]
-	internal static partial void LogErrorHttpRequestNotSuccesful(this ILogger logger, string projectId, string itemId, int version, HttpStatusCode statusCode);
-
-	[LoggerMessage(Level = LogLevel.Trace, Message = "Item file size: Project ID = {ProjectId}, Item ID = {ItemId}, Version = {Version}, Size = {Size}")]
-	internal static partial void LogTraceBackupFileSize(this ILogger logger, string ProjectId, string itemId, int version, long size);
 
 	// Report
 	[LoggerMessage(Level = LogLevel.Error, Message = "Report key not found: Type = {Type}, ID = {Id}")]
@@ -75,4 +69,14 @@ internal static partial class LoggerExtensions
 
 	[LoggerMessage(Level = LogLevel.Error, Message = "Report save failed")]
 	internal static partial void LogErrorReportSaveFailed(this ILogger logger, Exception ex);
+
+	// Download
+	[LoggerMessage(Level = LogLevel.Error, Message = "Request not successful: Request Uri = {RequestUri}, Status = {StatusCode}")]
+	internal static partial void LogErrorHttpRequestNotSuccesful(this ILogger logger, Uri requestUri, HttpStatusCode statusCode);
+
+	[LoggerMessage(Level = LogLevel.Trace, Message = "File size: Request Uri = {RequestUri}, Size = {Size}")]
+	internal static partial void LogTraceDownloadFileSize(this ILogger logger, Uri requestUri, long size);
+
+	[LoggerMessage(LogLevel.Error, Message = "Failed to downloaded file: Request Uri = {RequestUri}")]
+	internal static partial void LogErrorDownloadFileFailed(this ILogger logger, Exception ex, Uri requestUri);
 }

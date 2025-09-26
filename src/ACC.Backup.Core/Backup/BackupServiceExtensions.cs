@@ -14,6 +14,11 @@ public static class BackupServiceExtensions
 			throw new InvalidOperationException("You must register an IExclusionProvider.");
 		}
 
+		if (builder.DownloadServiceFactory is null)
+		{
+			throw new InvalidOperationException("You must register an IDownloadService.");
+		}
+
 		if (builder.RepositoryServiceFactory is null)
 		{
 			throw new InvalidOperationException("You must register an IRepositoryService");
@@ -25,6 +30,7 @@ public static class BackupServiceExtensions
 		}
 
 		services.AddSingleton(provider => builder.ExclusionServiceFactory(provider));
+		services.AddSingleton(provider => builder.DownloadServiceFactory(provider));
 		services.AddSingleton(provider => builder.RepositoryServiceFactory(provider));
 		services.AddSingleton(provider => builder.ReportingServiceFactory(provider));
 		services.AddSingleton<IBackupService, BackupService>();

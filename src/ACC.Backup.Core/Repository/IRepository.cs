@@ -14,14 +14,13 @@ public interface IRepository
 	Task<int> GetItemVersionFromRepositoryAsync(Item item, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Downloads the specified item from the provided S3 download URI, reporting progress to the provided IProgress instance.
+	/// Ingests the specified item into the repository from the provided file path.
 	/// </summary>
-	/// <param name="progress"></param>"
 	/// <param name="item"></param>
-	/// <param name="signedUri"></param>
+	/// <param name="filePath"></param>
 	/// <param name="cancellationToken"></param>
-	/// <returns>True if the backup was succesful, false if it failed.</returns>
-	Task<bool> BackupItemToRepositoryAsync(IProgress<DownloadProgress> progress, Item item, Uri signedUri, CancellationToken cancellationToken = default);
+	/// <returns></returns>
+	Task<bool> IngestItemAsync(Item item, string filePath, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Saves the provided HTML report to the repository.

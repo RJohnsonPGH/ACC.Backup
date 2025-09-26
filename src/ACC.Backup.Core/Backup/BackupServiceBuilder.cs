@@ -3,12 +3,14 @@ using ACC.Backup.Core.Exclusion;
 using ACC.Backup.Core.Repository;
 using ACC.Client;
 using ACC.Backup.Core.Reporting;
+using ACC.Backup.Core.Download;
 
 namespace ACC.Backup.Core.Backup;
 
 public sealed class BackupServiceBuilder
 {
 	internal Func<IServiceProvider, IAccApiClient>? AccApiClientFactory { get; private set; }
+	internal Func<IServiceProvider, IDownloadService>? DownloadServiceFactory { get; private set; }
 	internal Func<IServiceProvider, IRepository>? RepositoryServiceFactory { get; private set; }
 	internal Func<IServiceProvider, IExclusionService>? ExclusionServiceFactory { get; private set; }
 	internal Func<IServiceProvider, IReportingService>? ReportingServiceFactory { get; private set; }
@@ -31,6 +33,27 @@ public sealed class BackupServiceBuilder
 		return this;
 	}
 
+	// Download Service
+	public BackupServiceBuilder WithDownloadService<T>() where T : class, IDownloadService
+	{
+		DownloadServiceFactory = serviceProvider => ActivatorUtilities.CreateInstance<T>(serviceProvider);
+		return this;
+	}
+
+	public BackupServiceBuilder WithDownloadService(IDownloadService downloadService)
+	{
+		DownloadServiceFactory = _ => downloadService;
+		return this;
+	}
+
+	public BackupServiceBuilder WithDownloadService(Func<IServiceProvider, IDownloadService> factory)
+	{
+		DownloadServiceFactory = factory;
+		return this;
+	}
+
+
+	// Repository Service
 	public BackupServiceBuilder WithRepositoryService<T>() where T : class, IRepository
 	{
 		RepositoryServiceFactory = serviceProvider => ActivatorUtilities.CreateInstance<T>(serviceProvider);

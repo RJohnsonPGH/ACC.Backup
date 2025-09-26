@@ -18,6 +18,7 @@ using ACC.Backup.Cli.Providers;
 using ACC.Backup.Cli.Interceptors;
 using ACC.Backup.Core.Reporting;
 using ACC.Backup.Cli.Logging;
+using ACC.Backup.Core.Download;
 
 var services = new ServiceCollection();
 
@@ -58,6 +59,7 @@ services.AddSingleton<IDegreeOfParallelismProvider, DatabaseDegreeOfParallelismP
 services.AddBackupService(configure =>
 {
 	configure.WithExclusionService<BasicExclusionService>();
+	configure.WithDownloadService<BasicDownloadService>();
 	configure.WithRepositoryService<LocalStorageRepository>();
 	configure.WithReportingService<BasicReportingService>();
 });

@@ -12,7 +12,7 @@ namespace ACC.Backup.Core.Repository;
 /// </summary>
 /// <param name="logger"></param>
 /// <param name="client"></param>
-public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepository> logger, HttpClient client, ILocalStorageRepositoryPathProvider pathProvider) : IRepository
+public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepository> logger, ILocalStorageRepositoryPathProvider pathProvider) : IRepository
 {
 	private readonly Lazy<Task> _initializationTask = new(async () =>
 	{
@@ -42,100 +42,59 @@ public sealed partial class LocalStorageRepository(ILogger<LocalStorageRepositor
 		return new RepositoryDbContext(options);
 	}
 
-	/// <summary>
-	/// Downloads the specified item from the provided signed URI, reporting progress to the provided IProgress instance.
-	/// </summary>
-	/// <param name="progress"></param>
-	/// <param name="item"></param>
-	/// <param name="signedUri"></param>
-	/// <param name="cancellationToken"></param>
-	/// <returns></returns>
-	/// <exception cref="InvalidOperationException">Thrown if the repository has not been initialized.</exception>
-	public async Task<bool> BackupItemToRepositoryAsync(IProgress<DownloadProgress> progress, Item item, Uri signedUri, CancellationToken cancellationToken)
+public async Task<bool> IngestItemAsync(Item item, string filePath, CancellationToken cancellationToken)
+{
+	try
 	{
-		var tempPath = Path.GetTempFileName();
-		try
+		// Combine the root path with the file relative path and then ensure it is created
+		var destinationFolder = Path.Combine(pathProvider.RepositoryPath, item.ProjectId, item.Urn.Id, $"{item.Version}");
+		var destinationPath = Path.Combine(destinationFolder, item.Name);
+		Directory.CreateDirectory(destinationFolder);
+		File.Move(filePath, destinationPath, true);
+
+		// Update the file creation and modification times to match the item's last modified time
+		File.SetCreationTimeUtc(destinationPath, item.LastModifiedTime);
+		File.SetLastWriteTimeUtc(destinationPath, item.LastModifiedTime);
+
+		logger.LogTraceItemIngestSuccessful(item.ProjectId, item.Id, item.Version, destinationPath);
+
+		// Update the database with the new item version
+		using var dbContext = await CreateRepositoryContextAsync(cancellationToken);
+		var repoItem = await dbContext.Items.FindAsync([item.Id], cancellationToken);
+
+		// If the item does not exist, insert it as a new record
+		if (repoItem is null)
 		{
-			// Perform the HTTP request and verify the response indicates success
-			var response = await client.GetAsync(signedUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-			if (!response.IsSuccessStatusCode)
+			dbContext.Items.Add(new()
 			{
-				logger.LogErrorHttpRequestNotSuccesful(item.ProjectId, item.Id, item.Version, response.StatusCode);
-				return false;
-			}
-
-			// Get the total file size from the Content-Length header if available
-			var totalBytes = response.Content.Headers.ContentLength;
-			logger.LogTraceBackupFileSize(item.ProjectId, item.Id, item.Version, totalBytes ?? 0);
-
-			// Download the file in chunks, reporting progress
-			await using var fileStream = File.Open(tempPath, FileMode.Create);
-			await using var httpStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-
-			var buffer = new byte[81920];
-			long totalRead = 0;
-			int read;
-			while ((read = await httpStream.ReadAsync(buffer, cancellationToken)) > 0)
-			{
-				cancellationToken.ThrowIfCancellationRequested();
-
-				await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-				totalRead += read;
-				progress.Report(new(totalRead, totalBytes ?? 0));
-			}
-#warning refactor download service into separate service
-			await fileStream.DisposeAsync();
-
-			// Combine the root path with the file relative path and then ensure it is created
-			var destinationFolder = Path.Combine(pathProvider.RepositoryPath, item.ProjectId, item.Urn.Id, $"{item.Version}");
-			var destinationPath = Path.Combine(destinationFolder, item.Name);
-			logger.LogTraceItemDownloadDestination(item.ProjectId, item.Id, item.Version, destinationPath);
-			Directory.CreateDirectory(destinationFolder);
-			File.Move(tempPath, destinationPath, true);
-
-			// Update the file creation and modification times to match the item's last modified time
-			File.SetCreationTimeUtc(destinationPath, item.LastModifiedTime);
-			File.SetLastWriteTimeUtc(destinationPath, item.LastModifiedTime);
-
-			logger.LogTraceItemDownloadedSuccessfully(item.ProjectId, item.Id, item.Version);
-
-			// Update the database with the new item version
-			using var dbContext = await CreateRepositoryContextAsync(cancellationToken);
-			var repoItem = await dbContext.Items.FindAsync([item.Id], cancellationToken);
-
-			// If the item does not exist, insert it as a new record
-			if (repoItem is null)
-			{
-				dbContext.Items.Add(new()
-				{
-					Id = item.Id,
-					ProjectId = item.ProjectId,
-					ProjectName = item.ProjectName,
-					FolderId = item.FolderId,
-					Name = item.Name,
-					LatestVersion = item.Version
-				});
-			}
-			else
-			{
-				// While the ID doesnt change, the name or project name might
-				repoItem.Name = item.Name;
-				repoItem.ProjectName = item.ProjectName;
-				repoItem.LatestVersion = item.Version;
-			}
-
-			await dbContext.SaveChangesAsync(cancellationToken);
-			logger.LogTraceItemMetadataUpdated(item.ProjectId, item.Id, item.Version);
-
-			return true;
+				Id = item.Id,
+				ProjectId = item.ProjectId,
+				ProjectName = item.ProjectName,
+				FolderId = item.FolderId,
+				Name = item.Name,
+				LatestVersion = item.Version
+			});
 		}
-		catch (Exception ex)
+		else
 		{
-			File.Delete(tempPath);
-			logger.LogErrorItemDownloadFailed(ex, item.ProjectId, item.Id, item.Version);
-			return false;
+			// While the ID doesnt change, the name or project name might
+			repoItem.Name = item.Name;
+			repoItem.ProjectName = item.ProjectName;
+			repoItem.LatestVersion = item.Version;
 		}
+
+		await dbContext.SaveChangesAsync(cancellationToken);
+		logger.LogTraceItemMetadataUpdated(item.ProjectId, item.Id, item.Version);
+
+		return true;
 	}
+	catch (Exception ex)
+	{
+		File.Delete(filePath);
+		logger.LogErrorItemIngestFailed(ex, item.ProjectId, item.Id, item.Version);
+		return false;
+	}
+}
 
 	/// <summary>
 	/// Gets the latest version number of the specified item from the repository database.

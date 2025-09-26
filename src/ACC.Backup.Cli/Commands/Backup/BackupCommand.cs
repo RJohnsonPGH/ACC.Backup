@@ -103,7 +103,7 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, IBackup
                 var retrieveFilesTask = backupService.EnumerateFilesAsync(progress);
 
                 var downloadDisplayTasks = new ConcurrentDictionary<string, ProgressTask>();
-				var fileDownloadProgress = new Progress<DownloadProgress>(x =>
+				var fileDownloadProgress = new Progress<BackupProgress>(x =>
                 {
                     if (!downloadDisplayTasks.TryGetValue(x.Id, out var existingTask))
 					{
@@ -114,16 +114,16 @@ public sealed partial class BackupCommand(ILogger<BackupCommand> logger, IBackup
 
 					switch (x.Status)
                     {
-						case DownloadProgress.DownloadStatus.InProgress:
+						case BackupProgress.BackupStatus.InProgress:
 							existingTask.Value = x.PercentComplete;
 							break;
-						case DownloadProgress.DownloadStatus.Failed:
+						case BackupProgress.BackupStatus.Failed:
                             existingTask.Value = 100;
 							existingTask.StopTask();
 							_log.Add($"[red]Failed to download file:[/] {x.Id} - {x.Name}");
 							downloadDisplayTask.Increment(1);
                             break;
-						case DownloadProgress.DownloadStatus.Completed:
+						case BackupProgress.BackupStatus.Completed:
 							existingTask.Value = 100;
 							existingTask.StopTask();
 							downloadDisplayTask.Increment(1);

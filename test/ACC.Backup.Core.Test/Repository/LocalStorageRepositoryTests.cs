@@ -3,7 +3,6 @@ using ACC.Client.Entities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using RichardSzalay.MockHttp;
 
 namespace ACC.Backup.Core.Test.Repository;
 
@@ -32,16 +31,8 @@ public sealed class LocalStorageRepositoryTests(ITestOutputHelper outputHelper)
 		var pathProvider = Substitute.For<ILocalStorageRepositoryPathProvider>();
 		pathProvider.RepositoryPath.Returns(tempDir);
 
-		// HttpClient
-		byte[] fakeData = new byte[1024 * 10249];
-		new Random().NextBytes(fakeData);
-		var stream = new MemoryStream(fakeData, false);
-
-		var mockHttp = new MockHttpMessageHandler();
-		mockHttp
-			.When("*")
-			.Respond("application/octet-stream", stream);
-		var httpClient = mockHttp.ToHttpClient();
+		var testFile = Path.GetTempFileName();
+		File.SetLastWriteTimeUtc(testFile, DateTime.UtcNow);
 
 		// Set up DI
 		using var services = new ServiceCollection()
@@ -50,18 +41,14 @@ public sealed class LocalStorageRepositoryTests(ITestOutputHelper outputHelper)
 				builder.AddXUnit(outputHelper);
 				builder.SetMinimumLevel(LogLevel.Trace);
 			})
-			.AddSingleton(httpClient)
+
 			.AddSingleton(pathProvider)
 			.AddSingleton<IRepository, LocalStorageRepository>()
 			.BuildServiceProvider();
 		var repository = services.GetRequiredService<IRepository>();
 
 		// Act
-		var result = await repository.BackupItemToRepositoryAsync(
-			new Progress<Download.DownloadProgress>(),
-			item,
-			new Uri("https://example.com/file.dat"),
-			TestContext.Current.CancellationToken);
+		var result = await repository.IngestItemAsync(item, testFile, TestContext.Current.CancellationToken);
 
 		var repositoryItemVersion = await repository.GetItemVersionFromRepositoryAsync(item, TestContext.Current.CancellationToken);
 
@@ -76,9 +63,6 @@ public sealed class LocalStorageRepositoryTests(ITestOutputHelper outputHelper)
 		var fileInfo = new FileInfo(expectedFilePath);
 		Assert.Equal(item.CreateTime, fileInfo.CreationTimeUtc, TimeSpan.FromSeconds(1));
 		Assert.Equal(item.LastModifiedTime, fileInfo.LastWriteTimeUtc, TimeSpan.FromSeconds(1));
-
-		// Verify file size
-		Assert.Equal(stream.Length, fileInfo.Length);
 
 		// Verify database file version
 		Assert.Equal(item.Version, repositoryItemVersion);
