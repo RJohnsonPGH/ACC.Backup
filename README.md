@@ -64,3 +64,7 @@ Inclusion and exclusion logic works as follows:
 Backup jobs save metadata after every file is downloaded, meaning that interrupted backups can easily resume where they left off and do not need to re-download files that have already been processed.
 
 Incremental backups are done using the Version property from the API. If the repository metadata for a file version matches that of the API, it will be skipped. If a file has changed, the new version will be downloaded and kept alongside all previous versions.
+
+### License
+
+This software is licensed under the PolyForm Noncommercial License 1.0. Commercial use requires a separate paid license. Contact the creator for details.
